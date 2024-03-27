@@ -104,3 +104,58 @@ st.components.v1.html(open("filtered_network.html").read(), height=700, width=10
 st.markdown('Item Recomendations')
 
 st.write(filtered_df.drop(columns=['Unnamed: 0']))
+
+
+st.markdown('Personalized Recomendations')
+
+from neo4j import GraphDatabase, basic_auth
+
+driver = GraphDatabase.driver(
+  "bolt://54.163.87.95:7687",
+  auth=basic_auth("neo4j", "nouns-works-need"))
+
+# cypher_query = '''
+# MATCH (c:Customer {customerId:'15311'})-[r:BUYS]->(m:Item)
+# WITH c, avg(r.quantity) AS c_mean
+
+# MATCH (c:Customer)-[r1:BUYS]->(m:Item)<-[r2:BUYS]-(c2)
+# WITH c, c_mean, c2, COLLECT({r1: r1, r2: r2}) AS quantity WHERE size(quantity) > 10
+# MATCH (c2)-[r:BUYS]->(m:Item)
+# WITH c, c_mean, c2, avg(r.quantity) AS c2_mean, quantity
+
+# UNWIND quantity AS r
+
+# WITH sum( (r.r1.quantity - c_mean) * (r.r2.quantity - c2_mean) ) AS nom,
+# sqrt( sum( (r.r1.quantity - c_mean)^2) * sum( (r.r2.quantity - c2_mean) ^2)) AS denom,
+# c, c2 WHERE denom <> 0
+
+# WITH c, c2, nom/denom AS pearson
+# ORDER BY pearson DESC LIMIT 10
+
+# MATCH (c2)-[r:BUYS]->(m:Item) WHERE NOT EXISTS( (c)-[:BUYS]->(m) )
+
+# RETURN m.itemName, SUM( pearson * r.quantity) AS score
+# ORDER BY score DESC LIMIT 25
+# '''
+URI="bolt://54.163.87.95:7687"
+AUTH=("neo4j", "nouns-works-need")
+
+df = pd.read_csv('dataset/Assignment-1_Data.csv',sep=';').dropna()
+df['CustomerID'] = df['CustomerID'].astype(int)
+customer_ids=st.selectbox('select ID',df.CustomerID.unique())
+customer_ids=str(customer_ids)
+
+
+with GraphDatabase.driver(URI, auth=AUTH) as driver:
+    driver.verify_connectivity()
+    records, summary, keys = driver.execute_query(
+        "MATCH (c:Customer {customerId:\'"+customer_ids+"\'})-[r:BUYS]->(m:Item) WITH c, avg(r.quantity) AS c_mean MATCH (c:Customer)-[r1:BUYS]->(m:Item)<-[r2:BUYS]-(c2) WITH c, c_mean, c2, COLLECT({r1: r1, r2: r2}) AS quantity WHERE size(quantity) > 10 MATCH (c2)-[r:BUYS]->(m:Item) WITH c, c_mean, c2, avg(r.quantity) AS c2_mean, quantity UNWIND quantity AS r WITH sum( (r.r1.quantity - c_mean) * (r.r2.quantity - c2_mean) ) AS nom, sqrt( sum( (r.r1.quantity - c_mean)^2) * sum( (r.r2.quantity - c2_mean) ^2)) AS denom, c, c2 WHERE denom <> 0 WITH c, c2, nom/denom AS pearson ORDER BY pearson DESC LIMIT 10 MATCH (c2)-[r:BUYS]->(m:Item) WHERE NOT EXISTS( (c)-[:BUYS]->(m) ) RETURN m.itemName, SUM( pearson * r.quantity) AS score ORDER BY score DESC LIMIT 25",
+        database_="neo4j",
+    )
+    l=[]
+    for record in records:
+        l.append(record.data())
+
+recomended_items=pd.DataFrame(l)
+recomended_items.columns=['Recomended Items','Score']
+st.write(recomended_items)
